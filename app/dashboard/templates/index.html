@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard Overview — HTS Ticket Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2 class="page-title">Dashboard Overview</h2>
+    <p class="page-desc">Ringkasan status pemantauan tiket HTS dan metrik sistem secara real-time.</p>
+  </div>
+  <div>
+    <a href="/tickets" class="btn btn-primary">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+      Kelola Semua Tiket
+    </a>
+  </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="stats-grid">
+  <!-- Total Tickets -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <div class="stat-label">Total Tiket</div>
+      <div class="stat-value">{{ stats.total_tickets }}</div>
+      <div class="stat-sub">{{ stats.today_tickets }} tiket baru/diupdate hari ini</div>
+    </div>
+    <div class="stat-icon icon-blue">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+    </div>
+  </div>
+
+  <!-- Pending Tickets -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <div class="stat-label">Belum Ditangani</div>
+      <div class="stat-value" style="color: #fbbf24;">{{ stats.pending_tickets }}</div>
+      <div class="stat-sub">Memerlukan tindak lanjut</div>
+    </div>
+    <div class="stat-icon icon-amber">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+    </div>
+  </div>
+
+  <!-- Completed Tickets -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <div class="stat-label">Sudah Ditangani</div>
+      <div class="stat-value" style="color: #34d399;">{{ stats.completed_tickets }}</div>
+      <div class="stat-sub">Telah diselesaikan / solve</div>
+    </div>
+    <div class="stat-icon icon-green">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+    </div>
+  </div>
+
+  <!-- Notifications Sent -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <div class="stat-label">Notif Terkirim</div>
+      <div class="stat-value" style="color: #a78bfa;">{{ stats.notifications_sent }}</div>
+      <div class="stat-sub">Berhasil dikirim ke Telegram</div>
+    </div>
+    <div class="stat-icon icon-purple">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+    </div>
+  </div>
+
+  <!-- Notifications Failed / Pending -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <div class="stat-label">Notif Antrian / Gagal</div>
+      <div class="stat-value" style="color: #f87171;">{{ stats.notifications_failed + stats.notifications_pending }}</div>
+      <div class="stat-sub">{{ stats.notifications_pending }} pending, {{ stats.notifications_failed }} gagal</div>
+    </div>
+    <div class="stat-icon icon-red">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    </div>
+  </div>
+</div>
+
+<!-- Two Columns: Recent Events & System Status -->
+<div class="overview-grid">
+  <!-- Left Panel: Recent Events -->
+  <div class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">Aktivitas &amp; Riwayat Tiket Terkini</h3>
+      <a href="/tickets" style="font-size: 0.8rem; color: var(--primary); text-decoration: none;">Lihat Semua &rarr;</a>
+    </div>
+    <div class="panel-body">
+      {% if recent_events %}
+        <div class="activity-feed">
+          {% for ev in recent_events %}
+            <div class="activity-item">
+              <div class="activity-icon 
+                {% if 'RESEND' in ev.event_type %}icon-amber
+                {% elif 'EDIT' in ev.event_type %}icon-purple
+                {% elif 'REFETCH' in ev.event_type %}icon-blue
+                {% else %}icon-green{% endif %}">
+                {% if 'RESEND' in ev.event_type %}✉️
+                {% elif 'EDIT' in ev.event_type %}✏️
+                {% elif 'REFETCH' in ev.event_type %}🔄
+                {% else %}📌{% endif %}
+              </div>
+              <div class="activity-content">
+                <div class="activity-header">
+                  <span class="activity-title">{{ ev.nomor_aduan }} &bull; <span style="font-size: 0.75rem; font-weight: normal; color: var(--text-muted);">{{ ev.event_type }}</span></span>
+                  <span class="activity-time">{{ ev.event_timestamp or ev.created_at }}</span>
+                </div>
+                <div class="activity-desc">
+                  <strong>{{ ev.instansi or 'OPD' }}</strong> &mdash; {{ ev.pic_nama or 'PIC' }} ({{ ev.kategori or '-' }})
+                  {% if ev.changed_fields %}
+                    <span style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem;">Perubahan: {{ ev.changed_fields | tojson }}</span>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="color: var(--text-muted); font-size: 0.875rem; text-align: center; padding: 2rem 0;">Belum ada log aktivitas event tercatat.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Right Panel: Bot Health & Status -->
+  <div class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">Status Pemantau (Bot)</h3>
+      <span class="badge {% if bot_health and bot_health.status == 'healthy' %}badge-completed{% else %}badge-pending{% endif %}">
+        {{ bot_health.status | upper if bot_health else 'UNKNOWN' }}
+      </span>
+    </div>
+    <div class="panel-body">
+      <div class="status-list">
+        <div class="status-row">
+          <span class="status-key">Status HTS</span>
+          <span class="status-val">{{ bot_health.hts.state if bot_health and bot_health.hts else 'offline' }}</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Polling Terakhir</span>
+          <span class="status-val" style="font-size: 0.8rem;">{{ bot_health.hts.last_poll if bot_health and bot_health.hts and bot_health.hts.last_poll else '-' }}</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Sesi Login HTS</span>
+          <span class="status-val">{{ bot_health.session.state if bot_health and bot_health.session else 'UNAUTHENTICATED' }}</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Telegram Terakhir</span>
+          <span class="status-val" style="font-size: 0.8rem;">{{ bot_health.telegram.last_sent if bot_health and bot_health.telegram and bot_health.telegram.last_sent else '-' }}</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Uptime Bot</span>
+          <span class="status-val">
+            {% if bot_health and bot_health.app and bot_health.app.uptime_seconds %}
+              {{ (bot_health.app.uptime_seconds // 60) }} menit
+            {% else %}
+              -
+            {% endif %}
+          </span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Database State</span>
+          <span class="status-val" style="color: #34d399;">WAL Mode (OK)</span>
+        </div>
+      </div>
+
+      <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color); font-size: 0.775rem; color: var(--text-muted); line-height: 1.4;">
+        💡 Bot pemantau berjalan otomatis di background via PM2. Web Dashboard ini membaca langsung data yang sama dari database lokal secara aman.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Rekap Laporan Section -->
+<div class="panel" style="margin-top: 1.5rem;">
+  <div class="panel-header">
+    <h3 class="panel-title">Generate Rekap Laporan Shift</h3>
+  </div>
+  <div class="panel-body">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
+      <div class="form-group" style="margin-bottom: 0;">
+        <label style="display: block; margin-bottom: 0.4rem; font-size: 0.8rem; color: var(--text-muted);">Tanggal</label>
+        <input type="date" id="rekap-tanggal" class="form-control">
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label style="display: block; margin-bottom: 0.4rem; font-size: 0.8rem; color: var(--text-muted);">Shift</label>
+        <select id="rekap-shift" class="form-control">
+          <option value="pagi">Pagi (07:00 - 15:00)</option>
+          <option value="siang">Siang (15:00 - 23:00)</option>
+          <option value="malam">Malam (23:00 - 07:00)</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label style="display: block; margin-bottom: 0.4rem; font-size: 0.8rem; color: var(--text-muted);">Nama Petugas</label>
+        <input type="text" id="rekap-petugas" class="form-control" placeholder="Nama Anda">
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <button id="btn-generate-rekap" class="btn btn-primary" style="width: 100%; height: 38px;" onclick="generateRekap()">Generate Rekap</button>
+      </div>
+    </div>
+    
+    <div id="rekap-result-container" style="display: none;">
+      <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem; margin-top: 1rem; color: var(--text-primary);">Hasil Rekap:</h4>
+      <textarea id="rekap-output" class="form-control" style="height: 300px; font-family: monospace; font-size: 0.85rem; resize: vertical;" readonly></textarea>
+      <div style="margin-top: 0.5rem; text-align: right;">
+        <button class="btn btn-secondary" onclick="copyRekap()">Salin ke Clipboard</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

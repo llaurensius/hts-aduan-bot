@@ -1,0 +1,36 @@
+{
+  "data": [
+    {
+      "no_trouble": "1977-TShoot-2026-jateng-09",
+      "kategori": "troubleshoot",
+      "sub_kategori": "CORE NETWORK",
+      "opd": "Dinas Kesehatan",
+      "induk_opd_nama": "-",
+      "pic": "Siti Rahayu",
+      "wa": "081234567891",
+      "keluhan": "Jaringan tidak bisa diakses.",
+      "tgltshoot": "2026-09-17",
+      "t_solve": "0",
+      "is_submitted": 1
+    },
+    {
+      "no_trouble": "1978-TShoot-2026-jateng-09",
+      "kategori": "troubleshoot",
+      "sub_kategori": "APLIKASI",
+      "opd": "Bappeda",
+      "induk_opd_nama": "Setda",
+      "pic": "Ahmad Dani",
+      "wa": "081987654321",
+      "keluhan": "Login aplikasi gagal.",
+      "tgltshoot": "2026-09-17",
+      "t_solve": "0",
+      "is_submitted": 1
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 50,
+    "total": 2,
+    "total_pages": 1
+  }
+}

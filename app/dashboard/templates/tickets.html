@@ -1,0 +1,404 @@
+{% extends "base.html" %}
+
+{% block title %}Kelola Tiket — HTS Ticket Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2 class="page-title">Daftar Tiket Aduan</h2>
+    <p class="page-desc">Kelola tiket HTS di database lokal: cari, filter, kirim ulang notifikasi, re-fetch, edit, atau hapus.</p>
+  </div>
+  <div style="display: flex; gap: 0.75rem;">
+    <button class="btn btn-secondary" onclick="openBulkResendModal()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+      Kirim Notifikasi Massal
+    </button>
+  </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="filter-bar">
+  <div class="tabs">
+    <a href="/tickets?status=all{% if search_query %}&q={{ search_query }}{% endif %}{% if sort_by %}&sort={{ sort_by }}&order={{ sort_order }}{% endif %}" class="tab-btn {% if current_status == 'all' %}active{% endif %}">
+      Semua
+      <span class="tab-count">{{ stats.total_tickets }}</span>
+    </a>
+    <a href="/tickets?status=pending{% if search_query %}&q={{ search_query }}{% endif %}{% if sort_by %}&sort={{ sort_by }}&order={{ sort_order }}{% endif %}" class="tab-btn {% if current_status == 'pending' %}active{% endif %}">
+      Belum Ditangani
+      <span class="tab-count">{{ stats.pending_tickets }}</span>
+    </a>
+    <a href="/tickets?status=completed{% if search_query %}&q={{ search_query }}{% endif %}{% if sort_by %}&sort={{ sort_by }}&order={{ sort_order }}{% endif %}" class="tab-btn {% if current_status == 'completed' %}active{% endif %}">
+      Sudah Ditangani
+      <span class="tab-count">{{ stats.completed_tickets }}</span>
+    </a>
+  </div>
+
+  <form method="GET" action="/tickets" class="search-form">
+    {% if current_status and current_status != 'all' %}
+      <input type="hidden" name="status" value="{{ current_status }}">
+    {% endif %}
+    {% if sort_by %}
+      <input type="hidden" name="sort" value="{{ sort_by }}">
+      <input type="hidden" name="order" value="{{ sort_order }}">
+    {% endif %}
+    <input type="text" name="q" value="{{ search_query }}" placeholder="Cari nomor tiket, PIC, keluhan, instansi..." class="input-search">
+    <button type="submit" class="btn btn-primary" style="padding: 0.5rem 0.9rem;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+    </button>
+    {% if search_query %}
+      <a href="/tickets{% if current_status and current_status != 'all' %}?status={{ current_status }}{% endif %}{% if sort_by %}&sort={{ sort_by }}&order={{ sort_order }}{% endif %}" class="btn btn-secondary" title="Reset pencarian" style="padding: 0.5rem 0.75rem;">✕</a>
+    {% endif %}
+  </form>
+</div>
+
+{% macro render_th(key, label, default_order='asc') %}
+  {% set is_active = (sort_by == key) or (key == 'tanggal_aduan' and sort_by in ('id', 'tanggal_aduan')) %}
+  {% if is_active %}
+    {% set next_ord = 'asc' if sort_order == 'desc' else 'desc' %}
+  {% else %}
+    {% set next_ord = default_order %}
+  {% endif %}
+  <th class="th-sortable {% if is_active %}active{% endif %}">
+    <a href="/tickets?page=1&status={{ current_status }}{% if search_query %}&q={{ search_query }}{% endif %}&sort={{ key }}&order={{ next_ord }}"
+       class="sort-header-link"
+       title="Urutkan {{ label }}">
+      <span class="sort-label">{{ label }}</span>
+      <span class="sort-icon-wrap">
+        {% if is_active %}
+          {% if sort_order == 'asc' %}
+            <svg class="sort-icon active" width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M5 2L9 8H1L5 2Z" fill="currentColor"/>
+            </svg>
+          {% else %}
+            <svg class="sort-icon active" width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M5 8L1 2H9L5 8Z" fill="currentColor"/>
+            </svg>
+          {% endif %}
+        {% else %}
+          <svg class="sort-icon neutral" width="10" height="12" viewBox="0 0 10 12" fill="none">
+            <path d="M5 1L9 5H1L5 1Z" fill="currentColor" opacity="0.4"/>
+            <path d="M5 11L1 7H9L5 11Z" fill="currentColor" opacity="0.4"/>
+          </svg>
+        {% endif %}
+      </span>
+    </a>
+  </th>
+{% endmacro %}
+
+<!-- Table of Tickets -->
+
+<div class="table-container">
+  <table class="tickets-table">
+    <thead>
+      <tr>
+        {{ render_th('nomor_aduan', 'Nomor Tiket', 'desc') }}
+        {{ render_th('status', 'Status', 'asc') }}
+        {{ render_th('instansi', 'Instansi / OPD', 'asc') }}
+        {{ render_th('kategori', 'Kategori', 'asc') }}
+        {{ render_th('pic', 'PIC & Kontak', 'asc') }}
+        {{ render_th('keluhan', 'Keluhan', 'asc') }}
+        {{ render_th('tanggal_aduan', 'Tgl Aduan', 'desc') }}
+        <th style="text-align: right;">Aksi</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if tickets %}
+        {% for t in tickets %}
+          <tr>
+            <td>
+              <span class="ticket-num">{{ t.nomor_aduan }}</span>
+            </td>
+            <td>
+              {% if t.is_completed == 1 %}
+                <span class="badge badge-completed">Sudah Ditangani</span>
+              {% else %}
+                <span class="badge badge-pending">Belum Ditangani</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="ticket-instansi">{{ t.instansi or '-' }}</div>
+              {% if t.opd_induk %}
+                <span style="font-size: 0.75rem; color: var(--text-muted);">{{ t.opd_induk }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge badge-category">{{ t.kategori or '-' }}</span>
+              {% if t.sub_kategori %}
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem;">{{ t.sub_kategori }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <div style="font-weight: 500;">{{ t.pic_nama or '-' }}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">{{ t.pic_nomor or '-' }}</div>
+            </td>
+            <td>
+              <div class="ticket-keluhan" title="{{ t.keluhan or '' }}">{{ t.keluhan or '-' }}</div>
+            </td>
+            <td style="font-size: 0.8rem; color: var(--text-muted); white-space: nowrap;">
+              {{ t.tanggal_aduan or '-' }}
+            </td>
+            <td style="text-align: right;">
+              <div class="action-group" style="justify-content: flex-end;">
+                <!-- Detail Button -->
+                <button class="btn-icon" title="Lihat detail & riwayat" onclick="openDetailModal('{{ t.nomor_aduan }}')">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+
+                <!-- Resend Telegram Button -->
+                <button class="btn-icon" title="Kirim notifikasi Telegram" onclick="resendNotification('{{ t.nomor_aduan }}', this)">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+
+                <!-- Re-fetch Button -->
+                <button class="btn-icon" title="Tarik ulang dari HTS API" onclick="openRefetchModal('{{ t.nomor_aduan }}')">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                </button>
+
+                <!-- Edit Button -->
+                <button class="btn-icon" title="Edit data tiket lokal" onclick="openEditModal('{{ t.nomor_aduan }}')">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </button>
+
+                <!-- Delete Button -->
+                <button class="btn-icon" title="Hapus tiket dari database lokal" style="color: #f87171;" onclick="openDeleteModal('{{ t.nomor_aduan }}')">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="8" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+            Tidak ada tiket yang ditemukan dengan filter saat ini.
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Pagination -->
+<div class="pagination-container">
+  <div>
+    Menampilkan halaman <strong>{{ page }}</strong> dari <strong>{{ total_pages }}</strong> (Total {{ total }} tiket)
+  </div>
+
+  <div class="pagination-buttons">
+    {% if page > 1 %}
+      <a href="/tickets?page={{ page - 1 }}&status={{ current_status }}{% if search_query %}&q={{ search_query }}{% endif %}{% if sort_by %}&sort={{ sort_by }}&order={{ sort_order }}{% endif %}" class="page-btn">
+        &larr; Sebelumnya
+      </a>
+    {% else %}
+      <span class="page-btn disabled">&larr; Sebelumnya</span>
+    {% endif %}
+
+    {% if page < total_pages %}
+      <a href="/tickets?page={{ page + 1 }}&status={{ current_status }}{% if search_query %}&q={{ search_query }}{% endif %}{% if sort_by %}&sort={{ sort_by }}&order={{ sort_order }}{% endif %}" class="page-btn">
+        Berikutnya &rarr;
+      </a>
+    {% else %}
+      <span class="page-btn disabled">Berikutnya &rarr;</span>
+    {% endif %}
+  </div>
+</div>
+
+
+<!-- ──────────────────────────────────────────────────
+     MODAL 1: Detail & Riwayat Tiket
+     ────────────────────────────────────────────────── -->
+<div id="detail-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="detail-modal-title">Detail Tiket</h3>
+      <button class="modal-close" onclick="closeModal('detail-modal')">&times;</button>
+    </div>
+    <div id="detail-modal-body" class="modal-body">
+      <!-- Loaded dynamically via JS -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('detail-modal')">Tutup</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ──────────────────────────────────────────────────
+     MODAL 2: Edit Data Tiket
+     ────────────────────────────────────────────────── -->
+<div id="edit-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Edit Data Tiket Lokal</h3>
+      <button class="modal-close" onclick="closeModal('edit-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-nomor-aduan">
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Kategori</label>
+          <input type="text" id="edit-kategori" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Sub Kategori</label>
+          <input type="text" id="edit-sub-kategori" class="form-control">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Instansi / OPD</label>
+          <input type="text" id="edit-instansi" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>OPD Induk</label>
+          <input type="text" id="edit-opd-induk" class="form-control">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>PIC Nama</label>
+          <input type="text" id="edit-pic-nama" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>PIC Nomor WhatsApp</label>
+          <input type="text" id="edit-pic-nomor" class="form-control">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Keluhan</label>
+        <textarea id="edit-keluhan" class="form-control" rows="3"></textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Status Display</label>
+          <input type="text" id="edit-status-display" class="form-control" placeholder="Contoh: Belum Ditangani / Sudah Ditangani">
+        </div>
+        <div class="form-group">
+          <label>is_submitted (0/1)</label>
+          <input type="number" id="edit-is-submitted" class="form-control" min="0" max="1">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('edit-modal')">Batal</button>
+      <button id="btn-save-edit" class="btn btn-primary" onclick="submitEditTicket()">Simpan Perubahan</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ──────────────────────────────────────────────────
+     MODAL 3: Re-fetch Tiket dari HTS API
+     ────────────────────────────────────────────────── -->
+<div id="refetch-modal" class="modal-overlay">
+  <div class="modal-box" style="max-width: 480px;">
+    <div class="modal-header">
+      <h3>Tarik Ulang (Re-fetch) dari HTS</h3>
+      <button class="modal-close" onclick="closeModal('refetch-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="refetch-nomor-aduan">
+      <p style="font-size: 0.9rem; color: var(--text-primary); margin-bottom: 1rem;">
+        Anda akan menghapus data tiket <strong id="refetch-target-text" style="color: var(--primary);"></strong> dari database lokal, lalu menarik ulang versi terbarunya langsung dari HTS API.
+      </p>
+
+      <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); padding: 0.85rem; border-radius: var(--radius-md); font-size: 0.825rem;">
+        ℹ Proses ini memerlukan waktu 2&ndash;5 detik karena HTS API memindai tiket halaman per halaman.
+      </div>
+
+      <div style="margin-top: 1.25rem;">
+        <label style="display: flex; align-items: center; gap: 0.6rem; font-size: 0.875rem; cursor: pointer;">
+          <input type="checkbox" id="refetch-send-notif" style="width: 16px; height: 16px; accent-color: var(--primary);">
+          <span>Kirim notifikasi tiket baru ke Telegram setelah re-fetch?</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('refetch-modal')">Batal</button>
+      <button id="btn-confirm-refetch" class="btn btn-primary" onclick="submitRefetchTicket()">Mulai Re-fetch</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ──────────────────────────────────────────────────
+     MODAL 4: Hapus Tiket
+     ────────────────────────────────────────────────── -->
+<div id="delete-modal" class="modal-overlay">
+  <div class="modal-box" style="max-width: 460px;">
+    <div class="modal-header">
+      <h3>Konfirmasi Hapus Tiket</h3>
+      <button class="modal-close" onclick="closeModal('delete-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="delete-nomor-aduan">
+      <p style="font-size: 0.9rem; color: var(--text-primary); margin-bottom: 0.75rem;">
+        Apakah Anda yakin ingin menghapus tiket <strong id="delete-target-text" style="color: #f87171;"></strong> dari database lokal?
+      </p>
+      <p style="font-size: 0.8rem; color: var(--text-muted);">
+        Tindakan ini akan menghapus tiket beserta seluruh riwayat snapshot, event, dan notifikasinya (cascade delete).
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('delete-modal')">Batal</button>
+      <button id="btn-confirm-delete" class="btn btn-danger" onclick="submitDeleteTicket()">Hapus Permanen</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ──────────────────────────────────────────────────
+     MODAL 5: Bulk Resend Notifikasi
+     ────────────────────────────────────────────────── -->
+<div id="bulk-resend-modal" class="modal-overlay">
+  <div class="modal-box" style="max-width: 480px;">
+    <div class="modal-header">
+      <h3>Kirim Notifikasi Massal</h3>
+      <button class="modal-close" onclick="closeModal('bulk-resend-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+        Pilih kelompok tiket yang ingin dikirimi notifikasi ke Telegram:
+      </p>
+      
+      <div class="form-group">
+        <label>Target Status Tiket</label>
+        <select id="bulk-status-select" class="form-control">
+          <option value="pending">Tiket Belum Ditangani (Pending)</option>
+          <option value="completed">Tiket Sudah Ditangani (Completed)</option>
+          <option value="all">Semua Tiket di Database</option>
+        </select>
+      </div>
+
+      <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+        Setiap pesan akan dikirim secara berurutan ke Telegram dan dicatat ke riwayat audit database.
+      </div>
+
+      <!-- Progress Bar & Status Section -->
+      <div id="bulk-progress-container" style="display: none; margin-top: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.825rem; margin-bottom: 0.4rem;">
+          <span id="bulk-progress-label" style="color: var(--text-primary); font-weight: 600;">Memulai pengiriman...</span>
+          <span id="bulk-progress-counter" style="font-weight: 700; color: var(--primary);">0 / 0</span>
+        </div>
+
+        <div style="width: 100%; height: 8px; background: var(--bg-input); border-radius: var(--radius-full); overflow: hidden; border: 1px solid var(--border-color);">
+          <div id="bulk-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #6366f1, #10b981); transition: width 0.2s ease;"></div>
+        </div>
+
+        <!-- Live Log Container -->
+        <div id="bulk-log-container" style="margin-top: 0.85rem; max-height: 130px; overflow-y: auto; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.6rem 0.75rem; font-family: monospace; font-size: 0.75rem; display: flex; flex-direction: column; gap: 0.35rem;">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button id="btn-cancel-bulk" class="btn btn-secondary" onclick="closeModal('bulk-resend-modal')">Batal</button>
+      <button id="btn-confirm-bulk" class="btn btn-primary" onclick="submitBulkResend()">Kirim Sekarang</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

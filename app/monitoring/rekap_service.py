@@ -94,8 +94,8 @@ class RekapService:
                 categories.append(stats)
                 continue
 
-            filtered, _shift_start, shift_end = self._filter_tickets(raw_tickets, tanggal_date, shift)
-            stats = self._compute_stats(filtered, display, shift_end)
+            filtered, shift_start, shift_end = self._filter_tickets(raw_tickets, tanggal_date, shift)
+            stats = self._compute_stats(filtered, display, shift_start, shift_end)
             categories.append(stats)
 
         total_masuk = sum(c.masuk for c in categories)
@@ -259,33 +259,49 @@ class RekapService:
         return result, shift_start, shift_end
 
     def _compute_stats(
-        self, tickets: List[dict], display_name: str, shift_end: datetime
+        self, tickets: List[dict], display_name: str, shift_start: datetime, shift_end: datetime
     ) -> CategoryStats:
-        """Hitung statistik dan buat daftar tiket.
+        """Hitung statistik dan buat daftar tiket berdasarkan logika Operan Shift.
         
-        Sebuah tiket dianggap 'Selesai' pada shift ini jika t_solve-nya
-        valid DAN jatuh dalam atau sebelum akhir shift (shift_end).
-        Tiket yang diselesaikan SETELAH shift berakhir dihitung Belum Selesai
-        untuk laporan historis shift ini.
+        - Tiket Masuk: Dibuat strictly di dalam rentang waktu shift ini.
+        - Selesai: Diselesaikan strictly di dalam rentang waktu shift ini.
+        - Belum Selesai: Semua tiket yang masih menggantung di akhir shift ini.
         """
-        masuk = len(tickets)
+        masuk = 0
         selesai = 0
+        belum_selesai = 0
         ticket_summaries = []
 
         for t in tickets:
+            # Parsing waktu pembuatan tiket
+            raw_tgl = t.get("created_at") or t.get("tgltshoot") or t.get("tanggal_aduan")
+            if not raw_tgl and t.get("tgl_kjg"):
+                raw_tgl = f"{t.get('tgl_kjg')} {t.get('jam_kjg', '00:00:00')}"
+            dt_start = self._parse_tanggal_aduan(raw_tgl)
+
+            # Parsing waktu penyelesaian tiket
             if "checkout_datetime" in t or "visit_status" in t:
                 # Kunjungan
                 is_visited = str(t.get("visit_status", "")).strip() == "1"
-                dt_solve = self._parse_t_solve(t.get("checkout_datetime"))
-                is_selesai = is_visited and dt_solve is not None and dt_solve <= shift_end
+                dt_solve = self._parse_t_solve(t.get("checkout_datetime")) if is_visited else None
             else:
                 # Aduan / umum
                 dt_solve = self._parse_t_solve(t.get("t_solve"))
-                is_selesai = dt_solve is not None and dt_solve <= shift_end
-            
-            if is_selesai:
+
+            # Logika 1: Tiket Masuk (Hanya jika diciptakan di dalam rentang shift ini)
+            if dt_start and shift_start <= dt_start < shift_end:
+                masuk += 1
+
+            # Logika 2: Selesai (Hanya jika diselesaikan di dalam rentang shift ini)
+            is_selesai_shift_ini = dt_solve is not None and shift_start <= dt_solve <= shift_end
+            if is_selesai_shift_ini:
                 selesai += 1
-            else:
+
+            # Logika 3: Belum Selesai (Masih menggantung di akhir shift ini)
+            is_belum_selesai = dt_solve is None or dt_solve > shift_end
+            if is_belum_selesai:
+                belum_selesai += 1
+                
                 # Hanya masukkan tiket yang BELUM SELESAI ke daftar rincian
                 nomor = str(t.get("no_kunjung") or t.get("no_trouble") or t.get("nomor_aduan", "")).strip()
                 tujuan = str(t.get("keluhan") or t.get("tujuan") or t.get("deskripsi", "")).strip()
@@ -301,6 +317,6 @@ class RekapService:
             display_name=display_name,
             masuk=masuk,
             selesai=selesai,
-            belum_selesai=masuk - selesai,
+            belum_selesai=belum_selesai,
             tickets=ticket_summaries,
         )

@@ -62,17 +62,36 @@ class NotificationQueue:
         Returns:
             int: Inserted notification record id (rowid).
         """
+        # Cek apakah Mode Bisu aktif
+        import json
+        import os
+        is_muted = False
+        try:
+            if os.path.exists("data/settings.json"):
+                with open("data/settings.json", "r") as f:
+                    is_muted = json.load(f).get("is_muted", False)
+        except Exception:
+            pass
+
         notif_id = notification_id or str(uuid.uuid4())
+        initial_status = "CANCELLED" if is_muted else "PENDING"
+        
         row_id = self.db.models.insert_notification(
             conn=conn,
             message_text=message,
             event_id=event_id,
             channel=channel,
-            status="PENDING",
+            status=initial_status,
             notification_id=notif_id,
         )
-        logger.debug("Notification queued: id=%d, notif_id=%s, event_id=%s", row_id, notif_id, event_id)
+        
+        if is_muted:
+            logger.info("Mute Mode is ON: Notification %s automatically CANCELLED", notif_id)
+        else:
+            logger.debug("Notification queued: id=%d, notif_id=%s, event_id=%s", row_id, notif_id, event_id)
+            
         return row_id
+
 
     def queue_system_alert(
         self,

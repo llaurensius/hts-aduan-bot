@@ -233,7 +233,84 @@ def api_stats():
     db = get_db()
     stats = db.models.get_dashboard_stats()
     bot_health = get_bot_health()
+    
+    # Add mute status to the response
+    import json
+    import os
+    is_muted = False
+    try:
+        if os.path.exists("data/settings.json"):
+            with open("data/settings.json", "r") as f:
+                is_muted = json.load(f).get("is_muted", False)
+    except:
+        pass
+    bot_health["is_muted"] = is_muted
+
     return JSONResponse({"stats": stats, "bot_health": bot_health})
+
+
+@app.post("/api/settings/mute")
+def api_toggle_mute(request: Request):
+    """Toggle mode bisu (Global Mute). Jika aktif, semua notifikasi baru langsung dibatalkan (CANCELLED)."""
+    import json
+    import os
+    
+    settings_path = "data/settings.json"
+    is_muted = False
+    try:
+        if os.path.exists(settings_path):
+            with open(settings_path, "r") as f:
+                settings = json.load(f)
+                is_muted = settings.get("is_muted", False)
+    except Exception:
+        pass
+
+    new_mute_state = not is_muted
+    try:
+        os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+        with open(settings_path, "w") as f:
+            json.dump({"is_muted": new_mute_state}, f)
+    except Exception as e:
+        logger.error("Gagal menyimpan pengaturan mute: %s", e)
+        raise HTTPException(status_code=500, detail="Gagal menyimpan pengaturan mute.")
+
+    return JSONResponse({
+        "success": True, 
+        "is_muted": new_mute_state,
+        "message": "Mode Bisu AKTIF. Bot tidak akan mengirim notifikasi baru ke Telegram." if new_mute_state 
+                   else "Mode Bisu NONAKTIF. Bot kembali beroperasi normal."
+    })
+
+
+@app.post("/api/notifications/clear")
+def api_clear_queue():
+    """Membatalkan (CANCELLED) semua antrean notifikasi PENDING saat ini."""
+    db = get_db()
+    try:
+        with db.transaction() as conn:
+            cursor = conn.execute(
+                "UPDATE notifications SET status = 'CANCELLED' WHERE status = 'PENDING'"
+            )
+            affected_rows = cursor.rowcount
+            
+        # Catat audit event
+        if affected_rows > 0:
+            with db.transaction() as conn:
+                db.models.insert_system_event(
+                    event_type="QUEUE_CLEARED",
+                    description=f"{affected_rows} antrean notifikasi dibatalkan via Dashboard.",
+                    metadata={"cleared_count": affected_rows}
+                )
+
+        return JSONResponse({
+            "success": True,
+            "cleared_count": affected_rows,
+            "message": f"Berhasil menghapus {affected_rows} antrean pesan Telegram!"
+        })
+    except Exception as e:
+        logger.error("Gagal membersihkan antrean: %s", e)
+        raise HTTPException(status_code=500, detail="Gagal membersihkan antrean.")
+
 
 
 @app.get("/api/tickets")

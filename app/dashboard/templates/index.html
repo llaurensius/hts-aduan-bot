@@ -9,16 +9,39 @@
     <p class="page-desc">Ringkasan status pemantauan tiket HTS dan metrik sistem secara real-time.</p>
   </div>
   <div style="display: flex; gap: 0.5rem;">
+    <button id="btn-toggle-mute" class="btn {% if bot_health.is_muted %}btn-primary{% else %}btn-secondary{% endif %}" onclick="toggleMute()" title="Mute/Unmute notifikasi Telegram baru" style="{% if bot_health.is_muted %}background-color: #ef4444; border-color: #ef4444;{% endif %}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px">
+        {% if bot_health.is_muted %}
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line>
+        {% else %}
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        {% endif %}
+      </svg>
+      <span id="text-mute-btn">{% if bot_health.is_muted %}Mode Bisu Aktif{% else %}Mode Bisu{% endif %}</span>
+    </button>
+    <button id="btn-clear-queue" class="btn btn-secondary" onclick="clearQueue()" title="Batalkan semua antrean pesan yang masih PENDING">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+      Kosongkan Antrean
+    </button>
     <button id="btn-initial-sync" class="btn btn-secondary" onclick="runInitialSync()" title="Sinkronkan semua tiket HTS ke database lokal tanpa mengirim notifikasi Telegram">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
-      Sinkronisasi Awal
+      Sync Awal
     </button>
     <a href="/tickets" class="btn btn-primary">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-      Kelola Semua Tiket
+      Kelola Tiket
     </a>
   </div>
 </div>
+
+<!-- Banner Mute Aktif -->
+{% if bot_health.is_muted %}
+<div id="mute-banner" style="margin-bottom:1rem; padding:1rem 1.2rem; border-radius:8px; background:rgba(239, 68, 68, 0.1); border:1px solid #ef4444;">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <strong style="font-size:0.9rem; color:#ef4444;">🔕 Mode Bisu (Mute) Sedang Aktif!</strong>
+  </div>
+  <p style="margin-top:0.4rem; font-size:0.85rem; color:var(--text-muted,#9ca3af); margin-bottom:0;">Sistem terus mendeteksi perubahan tiket dari HTS, tetapi <b>tidak ada notifikasi Telegram yang dikirim</b> (semua antrean baru langsung dibatalkan). Jangan lupa matikan kembali setelah perbaikan selesai.</p>
+</div>
+{% endif %}
 
 <!-- Banner Sinkronisasi Awal -->
 <div id="sync-banner" style="display:none; margin-bottom:1rem; padding:1rem 1.2rem; border-radius:8px; background:var(--bg-secondary,#1e2535); border:1px solid var(--border-color,#2d3748);">
@@ -331,6 +354,62 @@ async function runInitialSync() {
       btn.disabled = false;
       btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>Sinkronisasi Awal';
     }
+  }
+}
+
+// ── Mode Bisu & Bersihkan Antrean ──────────────────────────────────────────
+
+async function toggleMute() {
+  const btn = document.getElementById('btn-toggle-mute');
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.textContent = 'Memproses...';
+  
+  try {
+    const response = await fetch('/api/settings/mute', { method: 'POST' });
+    const data = await response.json();
+    if (response.ok) {
+      alert(data.message);
+      location.reload();
+    } else {
+      alert('Gagal: ' + data.detail);
+      btn.innerHTML = originalText;
+      btn.disabled = false;
+    }
+  } catch (err) {
+    alert('Terjadi kesalahan jaringan.');
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
+}
+
+async function clearQueue() {
+  const confirmed = confirm(
+    '⚠️ Kosongkan Antrean Notifikasi\n\n' +
+    'Ini akan membatalkan semua pesan Telegram yang statusnya masih PENDING.\n' +
+    'Tindakan ini tidak bisa dibatalkan. Lanjutkan?'
+  );
+  if (!confirmed) return;
+
+  const btn = document.getElementById('btn-clear-queue');
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.textContent = 'Memproses...';
+
+  try {
+    const response = await fetch('/api/notifications/clear', { method: 'POST' });
+    const data = await response.json();
+    if (response.ok) {
+      alert(data.message);
+      location.reload();
+    } else {
+      alert('Gagal: ' + data.detail);
+    }
+  } catch (err) {
+    alert('Terjadi kesalahan jaringan.');
+  } finally {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
   }
 }
 

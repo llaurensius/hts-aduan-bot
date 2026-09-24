@@ -278,6 +278,7 @@ def _format_category_block(cat) -> str:
 def format_rekap(result) -> str:
     """Format RekapResult menjadi teks rekap final."""
     cat_blocks = "\n\n".join(_format_category_block(c) for c in result.categories)
+    footer_text = _format_footer(petugas_nama=result.nama_petugas)
 
     return (
         f"Rekap Laporan Aduan dan Permohonan Layanan "
@@ -291,6 +292,5 @@ def format_rekap(result) -> str:
         f"\n"
         f"{cat_blocks}\n"
         f"\n"
-        f"Terima kasih atas perhatian dan kerjasamanya.\n"
-        f"{result.nama_petugas}"
+        f"{footer_text}"
     )

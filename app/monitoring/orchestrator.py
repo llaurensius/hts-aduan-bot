@@ -228,12 +228,15 @@ class Orchestrator:
                 )
                 failures = self.health_state["consecutive_failures"]
 
-        if not self._hts_unavailable_notified:
+        # Toleransi: Jangan langsung spam HTS DOWN untuk gangguan sementara (flapping).
+        # Tunggu hingga 3 kali gagal berturut-turut sebelum menganggapnya benar-benar down.
+        if failures >= 3 and not self._hts_unavailable_notified:
             try:
                 from app.notifications.templates import format_hts_down
                 msg = format_hts_down(utcnow_iso())
                 self.notification_queue.queue_system_alert("HTS_DOWN", msg)
                 self._hts_unavailable_notified = True
+                logger.info("HTS_DOWN alert dikirim karena sudah %d kali gagal.", failures)
             except Exception as alert_err:
                 logger.warning("Could not queue HTS_DOWN alert: %s", alert_err)
 

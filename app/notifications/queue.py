@@ -140,6 +140,13 @@ class NotificationQueue:
             message_text = notif["message_text"]
             current_attempts = notif["attempt_count"]
 
+            # Double-check jika notifikasi dibatalkan via dashboard saat loop ini sedang berjalan
+            with self.db.transaction() as conn:
+                check = conn.execute("SELECT status FROM notifications WHERE notification_id = ?", (notif_id,)).fetchone()
+                if check and check["status"] == "CANCELLED":
+                    logger.info("Notifikasi %s dibatalkan via dashboard (mid-loop), skip pengiriman.", notif_id)
+                    continue
+
             try:
                 result = notifier.send(message_text)
                 msg_id = None

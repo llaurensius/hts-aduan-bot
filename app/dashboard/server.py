@@ -284,12 +284,12 @@ def api_toggle_mute(request: Request):
 
 @app.post("/api/notifications/clear")
 def api_clear_queue():
-    """Membatalkan (CANCELLED) semua antrean notifikasi PENDING saat ini."""
+    """Membatalkan (CANCELLED) semua antrean notifikasi PENDING & FAILED saat ini."""
     db = get_db()
     try:
         with db.transaction() as conn:
             cursor = conn.execute(
-                "UPDATE notifications SET status = 'CANCELLED' WHERE status = 'PENDING'"
+                "UPDATE notifications SET status = 'CANCELLED' WHERE status IN ('PENDING', 'FAILED', 'RETRY_EXHAUSTED')"
             )
             affected_rows = cursor.rowcount
             

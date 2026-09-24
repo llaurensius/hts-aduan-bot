@@ -8,6 +8,8 @@ services:
     command: ["python", "-m", "app.main"]
     env_file:
       - .env
+    environment:
+      - HEALTH_HOST=0.0.0.0
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -32,6 +34,7 @@ services:
     environment:
       - DASHBOARD_HOST=0.0.0.0
       - DASHBOARD_PORT=8888
+      - HEALTH_HOST=hts-monitor
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

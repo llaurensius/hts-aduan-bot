@@ -798,3 +798,120 @@ async def generate_rekap(req: RekapRequest):
     except Exception as e:
         logger.exception("Error generate rekap: %s", e)
         return {"success": False, "error": "server_error", "message": str(e)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Initial Sync (Silent / Manual Sinkronisasi)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post("/api/sync/initial")
+async def api_initial_sync():
+    """Jalankan sinkronisasi awal semua tiket dari HTS ke database lokal TANPA mengirim
+    notifikasi Telegram sama sekali. Berguna saat deploy pertama kali agar tidak spam.
+
+    Endpoint ini bersifat sinkron (streaming NDJSON) sehingga client bisa memantau progress.
+    """
+    from app.monitoring.reconciler import run_initial_sync
+    from app.hts.exceptions import HTSSessionExpiredError, HTSConnectionError
+
+    db = get_db()
+    cfg = get_config()
+
+    # Validasi session
+    session_manager = SessionManager(cfg)
+    session_valid = False
+    if session_manager.load_persisted_cookies():
+        session_valid = session_manager.check_session_validity()
+    if not session_valid:
+        session_valid = session_manager.login()
+
+    if not session_valid:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": "session_expired",
+                "message": "Sesi HTS belum aktif. Pastikan sudah login atau cookie valid.",
+            },
+        )
+
+    # Jalankan initial sync via streaming response
+    def stream_sync():
+        import json as _json
+
+        yield _json.dumps({"type": "start", "message": "Memulai sinkronisasi awal dari HTS..."}) + "\n"
+
+        from app.hts.client import create_http_session, HTSClient
+        http_session = create_http_session(cfg)
+
+        # Salin cookies dari session_manager ke http_session
+        for cookie in session_manager.http.cookies:
+            http_session.cookies.set(cookie.name, cookie.value, domain=cookie.domain)
+
+        client = HTSClient(cfg, http_session=http_session)
+        processor = TicketProcessor(db=db, notif_queue=None, is_initial_sync=True)
+
+        # Nonaktifkan notifikasi: gunakan dummy queue yang tidak mengirim apa-apa
+        class _NullQueue:
+            def queue(self, *a, **kw): pass
+            def process_pending(self, *a, **kw): pass
+
+        processor.notif_queue = _NullQueue()  # type: ignore[assignment]
+        processor.is_initial_sync = True
+
+        count = 0
+        try:
+            db.models.insert_system_event("INITIAL_SYNC_START", description="Manual sync via dashboard")
+            for ticket in client.fetch_all_tickets(status="all"):
+                processor.process(ticket, sync_source="initial")
+                count += 1
+                if count % 50 == 0:
+                    yield _json.dumps({"type": "progress", "count": count}) + "\n"
+
+            db.models.insert_system_event(
+                "INITIAL_SYNC_COMPLETE",
+                description="Manual sync via dashboard selesai",
+                metadata={"ticket_count": count},
+            )
+            yield _json.dumps({
+                "type": "done",
+                "success": True,
+                "count": count,
+                "message": f"Sinkronisasi selesai! {count} tiket berhasil disimpan ke database (tanpa notifikasi Telegram).",
+            }) + "\n"
+
+        except HTSSessionExpiredError:
+            yield _json.dumps({
+                "type": "error",
+                "error": "session_expired",
+                "message": "Sesi HTS kedaluwarsa di tengah sinkronisasi.",
+            }) + "\n"
+        except HTSConnectionError as e:
+            yield _json.dumps({
+                "type": "error",
+                "error": "connection_error",
+                "message": f"Koneksi ke HTS gagal: {e}",
+            }) + "\n"
+        except Exception as e:
+            logger.exception("Error saat manual initial sync: %s", e)
+            yield _json.dumps({
+                "type": "error",
+                "error": "server_error",
+                "message": str(e),
+            }) + "\n"
+
+    return StreamingResponse(stream_sync(), media_type="application/x-ndjson")
+
+
+@app.get("/api/sync/status")
+def api_sync_status():
+    """Cek apakah database lokal masih kosong (perlu sinkronisasi awal) atau sudah ada data."""
+    db = get_db()
+    total = db.models.count_tickets()
+    return JSONResponse({
+        "total_tickets": total,
+        "needs_initial_sync": total == 0,
+        "message": "Database kosong, disarankan lakukan Sinkronisasi Awal." if total == 0
+                   else f"Database sudah berisi {total} tiket.",
+    })
+

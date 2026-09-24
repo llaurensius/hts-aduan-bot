@@ -365,7 +365,53 @@ class Orchestrator:
             self._transition(AppState.SHUTTING_DOWN)
             return
 
-        # 3. Reconciliation
+        # 3. Auto-guard: jika DB kosong saat startup DAN initial_sync tidak di-set di config,
+        #    lakukan silent initial sync agar tiket lama tidak memicu spam notifikasi.
+        #    Jika initial_sync=True di config, biarkan step #2 yang menanganinya.
+        already_syncing = getattr(self.config, "initial_sync", False)
+        db_is_empty = False
+        if not already_syncing and self.db and hasattr(self.db, "models"):
+            try:
+                db_is_empty = self.db.models.count_tickets() == 0
+            except Exception:
+                pass
+
+        if db_is_empty:
+            logger.info(
+                "Database kosong terdeteksi saat startup. "
+                "Menjalankan Silent Initial Sync untuk mencegah spam notifikasi..."
+            )
+            self._transition(AppState.INITIAL_SYNC)
+            try:
+                from app.monitoring.reconciler import run_initial_sync
+                from app.monitoring.ticket_processor import TicketProcessor
+
+                class _NullQueue:
+                    def queue(self, *a, **kw): pass
+                    def process_pending(self, *a, **kw): pass
+
+                silent_processor = TicketProcessor(
+                    db=self.db,
+                    notif_queue=_NullQueue(),  # type: ignore[arg-type]
+                    is_initial_sync=True,
+                )
+                count = run_initial_sync(
+                    self.hts_client,
+                    processor=silent_processor,
+                    db=self.db,
+                )
+                logger.info(
+                    "Silent Initial Sync selesai: %d tiket disimpan (tanpa notifikasi Telegram).",
+                    count,
+                )
+            except Exception as e:
+                logger.error("Error saat auto silent initial sync: %s", e)
+
+            if self.shutdown_event.is_set():
+                self._transition(AppState.SHUTTING_DOWN)
+                return
+
+        # 4. Reconciliation (hanya untuk mendeteksi perubahan sejak terakhir aktif)
         self._transition(AppState.RECONCILING)
         try:
             if self.reconciler and hasattr(self.reconciler, "run_reconciliation"):
@@ -379,6 +425,7 @@ class Orchestrator:
         if self.shutdown_event.is_set():
             self._transition(AppState.SHUTTING_DOWN)
             return
+
 
         # 4. Main monitoring loop
         self._transition(AppState.MONITORING)

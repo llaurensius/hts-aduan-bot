@@ -1,0 +1,41 @@
+services:
+  hts-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hts-monitor
+    restart: unless-stopped
+    command: ["python", "-m", "app.main"]
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8080:8080" # Health endpoint
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  hts-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hts-dashboard
+    restart: unless-stopped
+    command: ["python", "scripts/run_dashboard.py"]
+    env_file:
+      - .env
+    environment:
+      - DASHBOARD_HOST=0.0.0.0
+      - DASHBOARD_PORT=8888
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8888:8888" # Web Dashboard
+    depends_on:
+      - hts-monitor
